@@ -15,6 +15,7 @@ Start:		;mov AX, 3509h;			get interrupt vector
 		
 		mov [oldSeg], CS
 		mov [oldOffset], offset MyNewProg
+
 		
 		mov AX, 3509h
 		int 21h
@@ -80,17 +81,10 @@ Next:		in AL, 61h
 		old09hofs DW ?
 		old09hseg DW ?
 		
-		;call MyNewProg
-		
-		;push WORD PTR [CS:oldSeg]
-		;push WORD PTR [CS:oldOffset]
-			
 		iret
-		
-		ENDP
 
-.data
-	heart db 03h
+		heart db 03h
+
     TitleText DB 'Registers'
 	Style1 DB 0DAh, 011h, 0BFh, 01Eh, 0B1h, 01Fh, 0C0h, 010h, 0D9h	
 
@@ -100,27 +94,29 @@ Next:		in AL, 61h
 	TextLen DB 9d
 	Len DB 20d
 	Height DB 20d
-	
-.code
+
+		ENDP
 
 MyNewProg	PROC
+		;EXTERN heart:BYTE
 		push DI
 		push AX
 		push ES
-
+		
 		push 0B800h
 		pop ES
 		mov DI, 80*20
 		mov AH, 4eh
-		mov AL, heart
+		mov AL, cs:[heart]
 		STOSW
-		inc AL
-		mov heart, AL
+		;inc AL
+		;mov heart, AL
 
 		pop ES
 		pop AX
 		pop DI
 		ret
+
 		ENDP
 
 FRAMEPROG	PROC
@@ -132,17 +128,26 @@ FRAMEPROG	PROC
 		push CX
 		push DX
 
+		xor AX, AX
+		xor BX, BX
+		xor CX, CX
+		xor DX, DX
+		xor DI, DI
+		xor SI, SI
+
 		StartOffset EQU 160d;		160 bytes in one string
 		ShadowColor EQU 01100000b;	shade color	
 		EmptyCell EQU 00h
 
-	NEXTSTR MACRO ;				shift on next string
+		NEXTSTR MACRO ;			shift on next string
 		add BX, StartOffset
 		mov DI, BX
 		ENDM
 
-		mov Text, offset TitleText
-		mov Style, offset Style1			
+		mov cs:[Text], offset cs:[TitleText]
+		mov cs:[Style], offset cs:[Style1]
+		;MOV Text, offset cs:[TitleText]
+		;MOV Style, offset cs:[Style1]			
 
 		COMMENT * FrameData:
 			Len - frame length
@@ -155,12 +160,12 @@ FRAMEPROG	PROC
 		mov BX, 0B800h;
 		mov ES, BX;		ES = B800h (address of text segment)
 		mov BX, 80d;		BX = length of all string
-		sub BL, Len;		BL -= frame length
+		sub BL, cs:[Len];	BL -= frame length
 		TEST BX, 1b;		Check whether BX is even
 		je print;		no->go to print
 		inc BX;			else->make it even (BX++)
 
-print:		add BX, StartOffset*2;	DI = BX += 160*2 (skip 2 strings above)
+print:		add BX, 160*2;		DI = BX += 160*2 (skip 2 strings above)
 		mov DI, BX
 		call PrintFrame;	go to PrintFrame
 
@@ -173,8 +178,6 @@ print:		add BX, StartOffset*2;	DI = BX += 160*2 (skip 2 strings above)
 		POP ES
 
 		ret
-		;mov AX, 4C00h
-		;int 21h
 
 ;----------PrintFrame-----------------------
 ;ASSUME:Len - lenght,
@@ -184,23 +187,23 @@ print:		add BX, StartOffset*2;	DI = BX += 160*2 (skip 2 strings above)
 ;	Text - text;
 ;-------------------------------------------
 PrintFrame:	xor CX, CX;		CX = 0
-		mov CL, Len;		CL = frame length
-		mov AH, Color;		AH = frame color
+		mov CL, cs:[Len];	CL = frame length
+		mov AH, cs:[Color];	AH = frame color
 		mov AL, EmptyCell;	AL = empty cell
 		REP STOSW;		print emtpy line
 
 		NEXTSTR		
 
-		mov SI, Style;		SI = address of Style
+		mov SI, cs:[Style];	SI = address of Style
 		call PrintTitle;	print title
 		
 		NEXTSTR
 
-		mov CL, Height;		print middle part
+		mov CL, cs:[Height];		print middle part
 		sub CL, 4d
 		
 printMiddle:	mov DH, CL;		save CX
-		mov CL, Len;		CL = frame length
+		mov CL, cs:[Len];		CL = frame length
 		call PrintLine
 
 		NEXTSTR
@@ -210,21 +213,21 @@ printMiddle:	mov DH, CL;		save CX
 		LOOP printMiddle
 
 		add SI, 3d;		SI = address of third Style
-		mov CL, Len
+		mov CL, cs:[Len]
 		
 		call PrintLine;		print ending string
 
 		NEXTSTR
 
-		mov CL, Len;		print the last empty line
+		mov CL, cs:[Len];		print the last empty line
 		mov AL, EmptyCell
 		REP STOSW
 
 		NEXTSTR
 
-		mov CL, Len;		DRAW SHADOW
-		mov DH, Height
-		mov AL, ShadowColor		
+		mov CL, cs:[Len];		DRAW SHADOW
+		mov DH, cs:[Height]
+		mov AL, cs:[ShadowColor]		
 		call DrawShadow
 
 		ret
@@ -242,36 +245,36 @@ printMiddle:	mov DH, CL;		save CX
 ;RETURN:ES:[DI] - next destination address
 ;	SI - address of next 3 Style symb
 ;--------------------------------------------
-PrintTitle:	mov CL, Len
+PrintTitle:	mov CL, cs:[Len]
 		sub CL, 6d
-		cmp TextLen, CL
+		cmp cs:[TextLen], CL
 		jbe notcutLen
-		mov TextLen, CL
+		mov cs:[TextLen], CL
 
 notcutLen:	mov AL, EmptyCell
 		STOSW
 	
-		mov AL, BYTE PTR [SI];	AH = firts Style symb
+		mov AL, BYTE PTR cs:[SI];	AH = firts Style symb
 		STOSW
 
-		mov CL, Len
-		sub CL, TextLen
+		mov CL, cs:[Len]
+		sub CL, cs:[TextLen]
 		sub CL, 6d;		2 empty, 2 first Style, 2 between Text
 		shr CL, 1;		CL = 1/2 len of second Style symbs
 		mov DH, CL;		save CL
 		
 		inc SI;			print second Style symb (1 part)
-		mov AL, BYTE PTR [SI];	AH = second Style symb
+		mov AL, BYTE PTR cs:[SI];	AH = second Style symb
 		REP STOSW
 
 		mov AL, EmptyCell
 		STOSW
 	
-		mov CL, TextLen;	CX = text length
-		mov Style, SI;		Style update
-		mov SI, Text;		SI = address of Text
+		mov CL, cs:[TextLen];	CX = text length
+		mov cs:[Style], SI;		Style update
+		mov SI, cs:[Text];		SI = address of Text
 		
-printText:	mov AL, BYTE PTR [SI]
+printText:	mov AL, BYTE PTR cs:[SI]
 		STOSW
 		inc SI
 		LOOP printText
@@ -279,17 +282,17 @@ printText:	mov AL, BYTE PTR [SI]
 		mov AL, EmptyCell;	after text space
 		STOSW
 
-		mov CL, Len;		CL = number of second Style symb
+		mov CL, cs:[Len];		CL = number of second Style symb
 		sub CL, DH
 		sub CL, 6d
-		sub CL, TextLen
+		sub CL, cs:[TextLen]
 		
-		mov SI, Style;		print second Style symbs (2 part)
-		mov AL, BYTE PTR [SI]
+		mov SI, cs:[Style];		print second Style symbs (2 part)
+		mov AL, BYTE PTR cs:[SI]
 		REP STOSW
 
 		inc SI;			print third Style syb 
-		mov AL, BYTE PTR [SI]
+		mov AL, BYTE PTR cs:[SI]
 		STOSW
 
 		mov AL, EmptyCell;	print empty cell
@@ -311,16 +314,16 @@ printText:	mov AL, BYTE PTR [SI]
 PrintLine:	mov AL, EmptyCell;	fisrt cell - the empty one
 		STOSW
 
-		mov AL, BYTE PTR [SI]; second cell - fist sybm from Style
+		mov AL, BYTE PTR cs:[SI]; second cell - fist sybm from Style
 		STOSW
 		
 		inc SI;			SI = second Style symb
 		sub CX, 4d;		CL -= 4 (2 empty and 2 end symb)
-		mov AL, BYTE PTR [SI];	AH = second Style symb
+		mov AL, BYTE PTR cs:[SI];	AH = second Style symb
 		REP STOSW;		fill inner part of the string
 
 		inc SI;			SI = third Style symb
-		mov AL, BYTE PTR [SI];	AH = third Style symb
+		mov AL, BYTE PTR cs:[SI];	AH = third Style symb
 		STOSW
 
 		mov AL, EmptyCell;	last frame cell - empty
@@ -347,7 +350,7 @@ shadowLine:	inc DI;			skip DI
 		mov CL, DH;		CL = frame hight
 		dec CL
 
-loopShadow:	sub BX, StartOffset;	address of upper string
+loopShadow:	sub BX, 160d;	address of upper string
 		mov DI, BX
 		inc DI;			skip byte
 		STOSB
@@ -356,8 +359,6 @@ loopShadow:	sub BX, StartOffset;	address of upper string
 		LOOP loopShadow;	fill shadow around the string
 		
 		ret
-
-
 		ENDP
 	
 
