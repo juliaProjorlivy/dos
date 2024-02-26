@@ -3,7 +3,91 @@
 .code
 org 100h
 
-Start:		PUSH CS;			save registers
+Start:	
+		mov AX, 3508h;			get address of old timer
+		int 21h
+
+		MOV WORD PTR oldhandler, BX;	save address of old timer
+		MOV WORD PTR oldhandler+2, ES
+
+		mov AX, 3509h;			get address of old kb
+		int 21h
+
+		mov word ptr old09h, BX;	save address of old kb
+		MOV WORD PTR old09h+2, ES
+
+
+		mov AX, 2508h;			set new timer
+		mov DX, offset MyItrptr
+		push CS
+		pop DS
+		int 21h
+	
+		mov AX, 2509h
+		mov DX, offset kbintrptr
+		int 21h
+
+
+endProg:	mov AX, 3100h;		terminate and make resident
+		mov DX, offset EOP;	to the EOP
+		shr DX, 4
+		inc DX
+		int 21h
+
+kbIntrptr 	PROC
+
+		pushf;
+		call cs:old09h
+
+		push AX
+
+		in AL, 60H
+		CMP AL, 34H
+		JE CloseFrame
+		cmp AL, 33h
+		jne endkb
+		mov CS:[FrameOn], 1
+		jmp endkb
+CloseFrame:
+		MOV cs:[FrameOn], 0
+endkb:
+		in AL, 61h
+		or AL, 80h
+		out 61h, AL
+		in AL, 61h
+		and AL, not 80h
+		out 61h, AL
+
+		mov AL, 20h
+		out 20h, AL
+
+		;db 0EAH
+		;old09h DD ?
+
+		POP AX
+		iret
+
+		old09h DD ?
+		ENDP
+
+
+MyItrptr	PROC
+		pushf
+		call dword ptr cs:oldhandler
+		push AX
+		PUSH ES
+		PUSH DI
+
+
+		TEST cs:[FrameOn], 1h;	if frame has already been on->let it 
+		jne PopoutFrame;	continue showing frame
+
+	
+		jmp Next;		continue
+
+
+ PopoutFrame:
+      		PUSH CS;			save registers
 		PUSH SS
 		PUSH ES
 		PUSH DS
@@ -25,83 +109,26 @@ SaveRegs:	mov DX, CX;			save CX
 		MOV CX, DX	
 		LOOP SaveRegs
 
-		mov AX, 3509h;		get address of old isr
-		int 21h
-
-		MOV AH, 05H;		set video page to 0
-		MOV AL, 0
-		INT 10H
-
-		MOV WORD PTR oldhandler, BX;	save address of old intrptr
-		MOV WORD PTR oldhandler+2, ES
-
-		cli;			set IF = 1
-		push DS;		save DS
-
-		mov AX, 2509h;		set new kb isr (my interrupter)
-		mov DX, offset MyItrptr
-		push CS
-		pop DS
-		int 21h
-
-		pop DS;			save DS
-		sti;			set IF = 0
-
-endProg:	mov AX, 3100h;		terminate and make resident
-		mov DX, offset EOP;	to the EOP
-		shr DX, 4
-		inc DX
-		int 21h
 
 
-MyItrptr	PROC
-
-		pushf;			iret to sys interrupter
-		call CS:oldhandler;	call old interrupter
-	
-		push AX;		save used registers
-		push ES
-		push DI
-
-		in AL, 60h;		read symbol from port 60h
-		cmp AL, 34h;		if '.'-> frame off
-		je CloseFrame
-
-		TEST cs:[FrameOn], 1h;	if frame has already been on->let it be
-		jne PopoutFrame;	continue showing frame
-
-		cmp AL, 33h;		if ',' -> frame on
-		je PopoutFrame
-	
-		jmp Next;		continue
-
-PopoutFrame:	mov AH, 05h;		active 1 vmem page
-		mov AL, 0
-		int 10h
+	;mov AH, 05h;		active 1 vmem page
+		;mov AL, 0
+		;int 10h
 		call FrameProg
-		or cs:[FrameOn], 1h;	FrameOn flag on
-		jmp Next;		continue
+		;or cs:[FrameOn], 1h;	FrameOn flag on
+		;jmp Next;		continue
 
-CloseFrame:	TEST cs:[FrameOn], 1
-		je Next
-		and cs:[FrameOn], 0h;	FrameOn flag off
-		mov AH, 05h;		active 0 vmem page
-		mov AL, 1
-		int 10h
 
-Next:		in AL, 61h
-		or AL, 80h
-		out 61h, AL
-		in AL, 61h
-		and AL, not 80h
-		out 61h, AL
-
+Next:	
 		mov AL, 20h
 		out 20h, AL
 
 		pop DI
  		pop ES
 		pop AX
+		
+		;db 0EAh
+		;oldhandler DD ?		
 
 		iret
 
@@ -114,8 +141,9 @@ Next:		in AL, 61h
 	TextLen DB 9d
 	Len DB 17d
 	Height DB 18d
-	FrameOn DB 0h
+	FrameOn DB 1h
 	oldhandler DD ?	
+	;old09h DD ?
 
 	RAX DB 'AX = ', 4 DUP(?)
 	RBX DB 'BX = ', 4 DUP(?)
