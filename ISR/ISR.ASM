@@ -3,62 +3,94 @@
 .code
 org 100h
 
-Start:		;mov AX, 3509h;			get interrupt vector	
-		;int 21h
-		
-		;call MyNewProg
-		;call MyNewProg
-		;jmp endProg
-		;mov oldOffset, BX;		save old ISR
-		;mov BX, ES
-		;mov oldSeg, BX
-		
-		mov [oldSeg], CS
-		mov [oldOffset], offset MyNewProg
+Start:		push 05200h
+		pop ES
+	
+		PUSH CS;			save registers
+		PUSH SS
+		PUSH ES
+		PUSH DS
+		PUSH SP
+		PUSH BP
+		PUSH DI
+		PUSH SI
+		PUSH DX
+		PUSH CX
+		PUSH BX
+		PUSH AX
+	
+		MOV SI, offset cs:[RAX]
+		mov CX, 12d;			12 registers
+SaveRegs:	mov DX, CX;			save CX
+		add SI, 5d;			first 5b 'reg = '
+		POP AX
+		CALL HexToStr
+		MOV CX, DX	
+		LOOP SaveRegs
 
-		
-		mov AX, 3509h
+		mov AX, 3509h;		get address of old isr
 		int 21h
-		mov old09hofs, BX
-		mov BX, ES
-		mov old09hseg, BX
 
-		cli;				set IF = 1
-		push DS
-		mov AX, 2509h
+		MOV AH, 05H
+		MOV AL, 0
+		INT 10H
+
+		MOV WORD PTR oldhandler, BX;	save address of old intrptr
+		MOV WORD PTR oldhandler+2, ES
+
+		cli;			set IF = 1
+		push DS;		save DS
+
+		mov AX, 2509h;		set new kb isr (my interrupter)
 		mov DX, offset MyItrptr
 		push CS
 		pop DS
 		int 21h
-		pop DS
 
-		sti
+		pop DS;			save DS
+		sti;			set IF = 0
 
-endProg:	mov AX, 3100h
-		mov DX, offset EOP
+endProg:	mov AX, 3100h;		terminate and make resident
+		mov DX, offset EOP;	to the EOP
 		shr DX, 4
 		inc DX
 		int 21h
 
-		oldOffset DW ?
-		oldSeg DW ?
 
 MyItrptr	PROC
-		push AX
-		push ES
-		
-		push 0B800h;		vMem
-		pop ES
-		mov DI, 160*5+80
-		
-		mov AH, 4Eh;		Color
-		in AL, 60h;		read symbol from port 60h
-		cmp AL, 33h
-		je PopoutFrame
-		STOSW;			ES:[DI+=2] = AX
-		jmp Next
 
-PopoutFrame:	call FRAMEPROG
+		pushf;			iret to sys interrupter
+		call CS:oldhandler;	call old interrupter
+	
+		push AX;		save used registers
+		push ES
+		push DI
+
+		in AL, 60h;		read symbol from port 60h
+		cmp AL, 34h;		if '.'-> frame off
+		je CloseFrame
+
+		TEST cs:[FrameOn], 1h;	if frame has already been on->let it be
+		jne PopoutFrame;	continue showing frame
+
+		cmp AL, 33h;		if ',' -> frame on
+		je PopoutFrame
+	
+		jmp Next;		continue
+
+PopoutFrame:	mov AH, 05h;		active 1 vmem page
+		mov AL, 0
+		int 10h
+		call FrameProg
+		or cs:[FrameOn], 1h;	FrameOn flag on
+		jmp Next;		continue
+
+CloseFrame:	TEST cs:[FrameOn], 1
+		je Next
+		and cs:[FrameOn], 0h;	FrameOn flag off
+		mov AH, 05h;		active 0 vmem page
+		mov AL, 1
+		int 10h
 
 Next:		in AL, 61h
 		or AL, 80h
@@ -70,56 +102,64 @@ Next:		in AL, 61h
 		mov AL, 20h
 		out 20h, AL
 
+		pop DI
  		pop ES
 		pop AX
 
-		;iret
-
-		call MyNewProg
-
-		DB 0EAh
-		old09hofs DW ?
-		old09hseg DW ?
-		
 		iret
 
-		heart db 03h
-
-    TitleText DB 'Registers'
-	Style1 DB 0DAh, 011h, 0BFh, 01Eh, 0B1h, 01Fh, 0C0h, 010h, 0D9h	
+    	TitleText DB 'Registers'
+	Style1 DB 0DAh, 011h, 0BFh, 01Fh, 020h, 01Eh, 0C0h, 010h, 0D9h	
 
 	Style DW ?
-	Color DB 4Ah
+	Color DB 5Ah
 	Text DW ?
 	TextLen DB 9d
-	Len DB 20d
-	Height DB 20d
+	Len DB 17d
+	Height DB 18d
+	FrameOn DB 0h
+	oldhandler DD ?	
 
+	RAX DB 'AX = ', 4 DUP(?)
+	RBX DB 'BX = ', 4 DUP(?)
+	RCX DB 'CX = ', 4 DUP(?)
+	RDX DB 'DX = ', 4 DUP(?)
+	RSI DB 'SI = ', 4 DUP(?)
+	RDI DB 'DI = ',	4 DUP(?)
+	RBP DB 'BP = ', 4 DUP(?)
+	RSP DB 'SP = ', 4 DUP(?)
+	RDS DB 'DS = ', 4 DUP(?)
+	RES DB 'ES = ', 4 DUP(?)
+	RSS DB 'SS = ', 4 DUP(?)
+	RCS DB 'CS = ', 4 DUP(?)
+	
 		ENDP
 
-MyNewProg	PROC
-		;EXTERN heart:BYTE
-		push DI
-		push AX
-		push ES
+;------------HEX TO STRING(2 bytes)-----------
+;ASSUME: AX - number,
+;	CS:[SI] - address for result
+;DESTROY: CX, BX, SI
+;---------------------------------------------
+HexToStr:	mov CX, 4d;			to 4 bytes string
+
+ParseAX:	mov BX, 0F000h;	
+		and BX, AX;			take fisrt number
+		shr BX, 12d
+
+		cmp BX, 9d;			if alpha->+55d
+		ja alpha
+		add BX, 30h;			if number->+30h
+		jmp endHexToStr
+alpha:		add BX, 55d
+
+endHexToStr:	mov BYTE PTR CS:[SI], BL
+		inc SI
+		SHL AX, 4;			next number
+		LOOP parseAX
 		
-		push 0B800h
-		pop ES
-		mov DI, 80*20
-		mov AH, 4eh
-		mov AL, cs:[heart]
-		STOSW
-		;inc AL
-		;mov heart, AL
+		RET
 
-		pop ES
-		pop AX
-		pop DI
-		ret
-
-		ENDP
-
-FRAMEPROG	PROC
+FrameProg	PROC
 		push ES
 		push SI
 		push DI
@@ -127,13 +167,6 @@ FRAMEPROG	PROC
 		push BX
 		push CX
 		push DX
-
-		xor AX, AX
-		xor BX, BX
-		xor CX, CX
-		xor DX, DX
-		xor DI, DI
-		xor SI, SI
 
 		StartOffset EQU 160d;		160 bytes in one string
 		ShadowColor EQU 01100000b;	shade color	
@@ -146,8 +179,6 @@ FRAMEPROG	PROC
 
 		mov cs:[Text], offset cs:[TitleText]
 		mov cs:[Style], offset cs:[Style1]
-		;MOV Text, offset cs:[TitleText]
-		;MOV Style, offset cs:[Style1]			
 
 		COMMENT * FrameData:
 			Len - frame length
@@ -186,7 +217,8 @@ print:		add BX, 160*2;		DI = BX += 160*2 (skip 2 strings above)
 ;	Color - color,
 ;	Text - text;
 ;-------------------------------------------
-PrintFrame:	xor CX, CX;		CX = 0
+PrintFrame:	push BX
+		xor CX, CX;		CX = 0
 		mov CL, cs:[Len];	CL = frame length
 		mov AH, cs:[Color];	AH = frame color
 		mov AL, EmptyCell;	AL = empty cell
@@ -228,7 +260,40 @@ printMiddle:	mov DH, CL;		save CX
 		mov CL, cs:[Len];		DRAW SHADOW
 		mov DH, cs:[Height]
 		mov AL, cs:[ShadowColor]		
-		call DrawShadow
+		call DrawShadow;		BX - start of 2 line; ES-VMEM
+		
+		POP BX
+		add BX, 3*StartOffset
+		add BX, 8d
+		mov DI, BX
+		mov SI, offset cs:[RAX]
+		mov CX, 12d
+		mov AH, 9d
+		call InsertRegs
+
+		ret
+
+;------------ INSERT TEXT -------------------
+;ASSUME:CS:[SI] - address of text
+;	ES:[DI] - address of vmem
+;	CX - number of strings
+;	AH - the length of each string
+;DESTROY:SI, DI, AL, DX, CX 
+;--------------------------------------------
+InsertRegs:	mov DX, CX;			save CX
+		MOV CL, AH;			for second loop
+drawReg:	mov AL, cs:[SI];		print byte to vmem
+		STOSB
+
+		inc SI;				next byte
+		inc DI;				skip color
+
+		LOOP drawReg;			second loop
+
+		NEXTSTR;			BX+160 -> DI
+	
+		mov CX, DX
+		LOOP InsertRegs;		first loop
 
 		ret
 		
@@ -245,8 +310,8 @@ printMiddle:	mov DH, CL;		save CX
 ;RETURN:ES:[DI] - next destination address
 ;	SI - address of next 3 Style symb
 ;--------------------------------------------
-PrintTitle:	mov CL, cs:[Len]
-		sub CL, 6d
+PrintTitle:	mov CL, cs:[Len];		check if str length is too big
+		sub CL, 6d;			if so -> cut it
 		cmp cs:[TextLen], CL
 		jbe notcutLen
 		mov cs:[TextLen], CL

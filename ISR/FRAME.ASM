@@ -14,7 +14,28 @@ FRAMEPROG	PROC
 		ENDM
 
 Start:		mov Text,offset TitleText
-		mov Style, offset Style1			
+		mov Style, offset Style1
+
+		MOV AH, 05H
+		MOV AL, 0
+		INT 10H
+
+		PUSH 0B800H
+		POP ES
+		MOV DI, 0
+		MOV AX, 7103H
+		MOV CX, 80*25
+		REP STOSW
+
+		;MOV AH, 05H
+		;MOV AL, 0
+		;INT 10H
+
+	
+	
+		mov AX, 001Bh
+		mov BX, 0000h	
+		int 10h	
 
 		COMMENT * FrameData:
 			Len - frame length
