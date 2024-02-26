@@ -3,10 +3,7 @@
 .code
 org 100h
 
-Start:		push 05200h
-		pop ES
-	
-		PUSH CS;			save registers
+Start:		PUSH CS;			save registers
 		PUSH SS
 		PUSH ES
 		PUSH DS
@@ -19,7 +16,7 @@ Start:		push 05200h
 		PUSH BX
 		PUSH AX
 	
-		MOV SI, offset cs:[RAX]
+		MOV SI, offset cs:[RAX];	SI point to the mem of regs
 		mov CX, 12d;			12 registers
 SaveRegs:	mov DX, CX;			save CX
 		add SI, 5d;			first 5b 'reg = '
@@ -31,7 +28,7 @@ SaveRegs:	mov DX, CX;			save CX
 		mov AX, 3509h;		get address of old isr
 		int 21h
 
-		MOV AH, 05H
+		MOV AH, 05H;		set video page to 0
 		MOV AL, 0
 		INT 10H
 
